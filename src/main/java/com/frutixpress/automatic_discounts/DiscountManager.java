@@ -5,23 +5,21 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpRequest.BodyPublisher;
 import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpRequest.Builder;
+import java.net.http.HttpResponse.BodyHandler;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Formatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.frutixpress.automatic_discounts.model.Product;
 import com.frutixpress.automatic_discounts.model.ProductsResponse;
@@ -36,7 +34,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class DiscountManager {
 
+    final static BodyHandler<String> bodyHandler = HttpResponse.BodyHandlers.ofString();
+    final static Builder httpBuilder = HttpRequest.newBuilder();
     final static HttpClient httpClient = HttpClient.newHttpClient();
+    final static ObjectMapper mapper = new ObjectMapper();
 
     final static String PRODUCTSRESTENDPOINT = "https://frutixpressonline.myshopify.com/admin/api/2021-01/products.json";
     final static String PRODUCTBYIDENDPOINT = "https://frutixpressonline.myshopify.com/admin/api/2021-01/products/#{id}.json";
@@ -46,8 +47,8 @@ public class DiscountManager {
 
     private final String apiKey = "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";
 
-    // TODO SMALLER TIME
-    @Scheduled(fixedDelay = 5000)
+    // UPDATES EVERY MINUTE
+    @Scheduled(fixedDelay = 60000)
     public void manageDiscounts() {
 
         List<Product> products = getAllProducts();
@@ -67,16 +68,18 @@ public class DiscountManager {
 
         }
 
+        products = null;
+
+        //System.gc();
+
     }
 
     private Double checkRealPrice(Product p) {
         Double res = null;
 
-        Map<String, String> metafields;
         try {
-            metafields = getMetaFieldsFromProduct(p);
 
-            String realPrice = metafields.get("real_price");
+            String realPrice = getMetaFieldsFromProduct(p).get("real_price");
 
             if (realPrice != null) {
                 res = Double.parseDouble(realPrice);
@@ -156,9 +159,8 @@ public class DiscountManager {
                     rules.add(new DiscountRule(expiryDays.get(i), discountPercentage.get(i)));
                 }
 
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                        Locale.ENGLISH);
-                LocalDate expiryDateValue = LocalDate.parse(metafields.get("expiry_date"), formatter);
+                LocalDate expiryDateValue = LocalDate.parse(metafields.get("expiry_date"), DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                Locale.ENGLISH));
 
                 Long daysBeforeExpiry = ChronoUnit.DAYS.between(LocalDate.now(), expiryDateValue);
 
@@ -213,13 +215,13 @@ public class DiscountManager {
         String productEndpoint = METAFIELDSOFPRODUCTRESTENDPOINT.replace("#{id}", p.getId().toString());
 
         //HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(productEndpoint))
+        HttpRequest request = httpBuilder.uri(URI.create(productEndpoint))
                 .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = httpClient.send(request, bodyHandler);
 
-        ObjectMapper mapper = new ObjectMapper();
+        //ObjectMapper mapper = new ObjectMapper();
         MetafieldsResponse responsePojo = mapper.readValue(response.body(), MetafieldsResponse.class);
 
         List<Metafield> metafieldsList = responsePojo.getMetafields();
@@ -241,14 +243,14 @@ public class DiscountManager {
         List<Product> res = new ArrayList<>();
 
         //HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(PRODUCTSRESTENDPOINT))
+        HttpRequest request = httpBuilder.uri(URI.create(PRODUCTSRESTENDPOINT))
                 .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
                 .build();
 
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, bodyHandler);
 
-            ObjectMapper mapper = new ObjectMapper();
+            //ObjectMapper mapper = new ObjectMapper();
             ProductsResponse responsePojo = mapper.readValue(response.body(), ProductsResponse.class);
 
             res = responsePojo.getProducts();
@@ -299,21 +301,19 @@ public class DiscountManager {
             }
         }
 
-        ObjectMapper mapper = new ObjectMapper();
+        //ObjectMapper mapper = new ObjectMapper();
 
         String endpoint = PRODUCTBYIDENDPOINT.replace("#{id}", updatedProduct.getId().toString());
 
         //HttpClient client = HttpClient.newHttpClient();
 
         try {
-            String body = "{\"product\":"+mapper.writeValueAsString(updatedProduct)+"}";
+            String body = ("{\"product\":"+mapper.writeValueAsString(updatedProduct)+"}").replace("\"null\"", "null");
 
-            body = body.replace("\"null\"", "null");
-
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(endpoint))
+            HttpRequest request = httpBuilder.uri(URI.create(endpoint))
             .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).PUT(BodyPublishers.ofString(body))
             .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            httpClient.send(request, bodyHandler);
 
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
