@@ -1,7 +1,5 @@
 package com.frutixpress.automatic_discounts.model;
 
-import java.time.LocalDate;
-
 public class Discount {
 
     Integer percentageDiscount;
