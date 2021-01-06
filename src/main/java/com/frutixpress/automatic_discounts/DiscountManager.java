@@ -36,6 +36,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class DiscountManager {
 
+    final static HttpClient httpClient = HttpClient.newHttpClient();
+
     final static String PRODUCTSRESTENDPOINT = "https://frutixpressonline.myshopify.com/admin/api/2021-01/products.json";
     final static String PRODUCTBYIDENDPOINT = "https://frutixpressonline.myshopify.com/admin/api/2021-01/products/#{id}.json";
     final static String METAFIELDSOFPRODUCTRESTENDPOINT = "https://frutixpressonline.myshopify.com/admin/products/#{id}/metafields.json";
@@ -210,12 +212,12 @@ public class DiscountManager {
 
         String productEndpoint = METAFIELDSOFPRODUCTRESTENDPOINT.replace("#{id}", p.getId().toString());
 
-        HttpClient client = HttpClient.newHttpClient();
+        //HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder().uri(URI.create(productEndpoint))
                 .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
                 .build();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         ObjectMapper mapper = new ObjectMapper();
         MetafieldsResponse responsePojo = mapper.readValue(response.body(), MetafieldsResponse.class);
@@ -238,13 +240,13 @@ public class DiscountManager {
 
         List<Product> res = new ArrayList<>();
 
-        HttpClient client = HttpClient.newHttpClient();
+        //HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder().uri(URI.create(PRODUCTSRESTENDPOINT))
                 .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
                 .build();
 
         try {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             ObjectMapper mapper = new ObjectMapper();
             ProductsResponse responsePojo = mapper.readValue(response.body(), ProductsResponse.class);
@@ -301,7 +303,7 @@ public class DiscountManager {
 
         String endpoint = PRODUCTBYIDENDPOINT.replace("#{id}", updatedProduct.getId().toString());
 
-        HttpClient client = HttpClient.newHttpClient();
+        //HttpClient client = HttpClient.newHttpClient();
 
         try {
             String body = "{\"product\":"+mapper.writeValueAsString(updatedProduct)+"}";
@@ -311,7 +313,7 @@ public class DiscountManager {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(endpoint))
             .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).PUT(BodyPublishers.ofString(body))
             .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
