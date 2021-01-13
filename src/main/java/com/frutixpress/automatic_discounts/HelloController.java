@@ -19,7 +19,8 @@ public class HelloController {
 	@RequestMapping("/")
 	public String index() {
 
-        return "Greetings from Spring Boot! Time: "+time+", Products: " + manager.getAllProducts();
+        //return "Greetings from Spring Boot! Time: "+time+", Products: " + manager.getAllProducts();
+        return "Frutixpress Automatic Discounts is working!";
     }
     
     @Scheduled(fixedRate = 1000)
