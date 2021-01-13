@@ -148,7 +148,7 @@ public class DiscountManager {
 
             Map<String, String> metafields = getMetaFieldsFromProduct(p);
 
-            if (metafields.containsKey("discount-percentage") && metafields.containsKey("expiry-days")) {
+            if (metafields.containsKey("discount-percentage") && metafields.containsKey("expiry-days") && metafields.containsKey("expiry_date")) {
 
                 List<Integer> discountPercentage = stringToIntList(metafields.get("discount-percentage"));
                 List<Integer> expiryDays = stringToIntList(metafields.get("expiry-days"));
