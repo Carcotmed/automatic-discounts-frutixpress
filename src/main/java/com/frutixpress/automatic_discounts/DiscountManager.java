@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.frutixpress.automatic_discounts.model.Product;
 import com.frutixpress.automatic_discounts.model.ProductsResponse;
@@ -29,7 +31,10 @@ import com.frutixpress.automatic_discounts.model.Metafield;
 import com.frutixpress.automatic_discounts.model.MetafieldsResponse;
 
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
+
+import ch.qos.logback.core.util.SystemInfo;
 
 @Service
 public class DiscountManager {
@@ -55,11 +60,11 @@ public class DiscountManager {
 
         for (Product p : products) {
 
-            System.out.println("\n----------------Product:"+p+"---------------------\n");
+            System.out.println("\n----------------Product:" + p + "---------------------\n");
 
             Discount updatedDiscount = calculateDiscount(p);
 
-            if (shouldBeUpdated (p, updatedDiscount)) {
+            if (shouldBeUpdated(p, updatedDiscount)) {
                 System.out.println("\nHay que actualizar el descuento");
                 updateDiscount(p, updatedDiscount);
             } else {
@@ -70,39 +75,33 @@ public class DiscountManager {
 
         products = null;
 
-        //System.gc();
+        // System.gc();
 
     }
 
-    private Double checkRealPrice(Product p) {
+    public Double checkRealPrice(Product p) {
         Double res = null;
 
-        try {
+        String realPrice = getMetaFieldsFromProduct(p).get("real_price");
 
-            String realPrice = getMetaFieldsFromProduct(p).get("real_price");
-
-            if (realPrice != null) {
-                res = Double.parseDouble(realPrice);
-            }
-
-
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+        if (realPrice != null) {
+            res = Double.parseDouble(realPrice);
         }
 
         return res;
     }
 
-    private boolean shouldBeUpdated(Product p, Discount discount) {
+    public boolean shouldBeUpdated(Product p, Discount discount) {
 
         boolean res = false;
 
-        Double realPrice = checkRealPrice (p);
+        Double realPrice = checkRealPrice(p);
 
         if (realPrice != null) {
 
-            if (discount.getPercentageDiscount()==0) {
-                //Para que no se actualice, el compare debe estar vacío y el precio debe ser el precio real
+            if (discount.getPercentageDiscount() == 0) {
+                // Para que no se actualice, el compare debe estar vacío y el precio debe ser el
+                // precio real
 
                 Double price = Double.parseDouble(p.getVariants().get(0).getPrice());
 
@@ -110,83 +109,80 @@ public class DiscountManager {
 
                 Boolean check1 = comparingPrice == null;
 
-                Boolean check2 =price.equals(realPrice);
+                Boolean check2 = price.equals(realPrice);
 
-                res = !(check1&&check2);
+                res = !(check1 && check2);
 
             } else {
-                //Para que no se actualice, el compare debe ser el precio real y el precio debe ser el precio calculado
+                // Para que no se actualice, el compare debe ser el precio real y el precio debe
+                // ser el precio calculado
 
                 Double price = Double.parseDouble(p.getVariants().get(0).getPrice());
 
                 String comparingPrice = p.getVariants().get(0).getCompareAtPrice();
 
-                Double calculatedPrice = realPrice * (1 - (double)discount.getPercentageDiscount() / 100);
+                Double calculatedPrice = realPrice * (1 - (double) discount.getPercentageDiscount() / 100);
 
-                Boolean check1 = (comparingPrice != null)&&(realPrice.equals(Double.parseDouble(comparingPrice)));
+                Boolean check1 = (comparingPrice != null) && (realPrice.equals(Double.parseDouble(comparingPrice)));
 
                 Boolean check2 = price.equals(calculatedPrice);
 
-                res = !(check1&&check2);
+                res = !(check1 && check2);
 
             }
 
-
         } else {
-            System.out.println("\nEl producto no tiene precio en el campo \"realPrice\", por lo que no será manejado automáticamente.");
+            System.out.println(
+                    "\nEl producto no tiene precio en el campo \"realPrice\", por lo que no será manejado automáticamente.");
         }
 
         return res;
 
     }
 
-    private Discount calculateDiscount(Product p) {
+    public Discount calculateDiscount(Product p) {
 
         Discount res = new Discount(0);
 
-        try {
+        Map<String, String> metafields = getMetaFieldsFromProduct(p);
 
-            Map<String, String> metafields = getMetaFieldsFromProduct(p);
+        if (metafields.containsKey("discount-percentage") && metafields.containsKey("expiry-days")
+                && metafields.containsKey("expiry_date")) {
 
-            if (metafields.containsKey("discount-percentage") && metafields.containsKey("expiry-days") && metafields.containsKey("expiry_date")) {
+            List<Integer> discountPercentage = stringToIntList(metafields.get("discount-percentage"));
+            List<Integer> expiryDays = stringToIntList(metafields.get("expiry-days"));
 
-                List<Integer> discountPercentage = stringToIntList(metafields.get("discount-percentage"));
-                List<Integer> expiryDays = stringToIntList(metafields.get("expiry-days"));
+            List<DiscountRule> rules = new ArrayList<>();
 
-                List<DiscountRule> rules = new ArrayList<>();
-
-                for (int i = 0; i <= expiryDays.size() - 1; i++) {
-                    rules.add(new DiscountRule(expiryDays.get(i), discountPercentage.get(i)));
-                }
-
-                LocalDate expiryDateValue = LocalDate.parse(metafields.get("expiry_date"), DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                Locale.ENGLISH));
-
-                Long daysBeforeExpiry = ChronoUnit.DAYS.between(LocalDate.now(), expiryDateValue);
-
-                DiscountRule chosen = chooseMostRestrictiveDiscount(rules, daysBeforeExpiry);
-
-                if (chosen != null) {
-                    if (chosen.getPercentageDiscount()>0 && chosen.getPercentageDiscount()<100) {
-                        res = new Discount(chosen.getPercentageDiscount());
-                    } else {
-                        System.out.println("\nEl porcentaje de descuento de la regla elegida no se encuentra en el rango (0,100), por lo que no se aplicará");
-                    }
-                } else {
-                    res = new Discount(0);
-                }
-
+            for (int i = 0; i <= expiryDays.size() - 1; i++) {
+                rules.add(new DiscountRule(expiryDays.get(i), discountPercentage.get(i)));
             }
 
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            LocalDate expiryDateValue = LocalDate.parse(metafields.get("expiry_date"),
+                    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH));
+
+            Long daysBeforeExpiry = ChronoUnit.DAYS.between(LocalDate.now(), expiryDateValue);
+
+            DiscountRule chosen = chooseMostRestrictiveDiscount(rules, daysBeforeExpiry);
+
+            if (chosen != null) {
+                if (chosen.getPercentageDiscount() > 0 && chosen.getPercentageDiscount() < 100) {
+                    res = new Discount(chosen.getPercentageDiscount());
+                } else {
+                    System.out.println(
+                            "\nEl porcentaje de descuento de la regla elegida no se encuentra en el rango (0,100), por lo que no se aplicará");
+                }
+            } else {
+                res = new Discount(0);
+            }
+
         }
 
         return res;
 
     }
 
-    private DiscountRule chooseMostRestrictiveDiscount(List<DiscountRule> discountRules, Long daysBeforeExpiry) {
+    public DiscountRule chooseMostRestrictiveDiscount(List<DiscountRule> discountRules, Long daysBeforeExpiry) {
 
         DiscountRule chosen;
         // La regla elegida debe de ser la menor de todas las que sean mayor que los
@@ -210,26 +206,30 @@ public class DiscountManager {
 
     }
 
-    private Map<String, String> getMetaFieldsFromProduct(Product p) throws IOException, InterruptedException {
+    public Map<String, String> getMetaFieldsFromProduct(Product p) {
 
         String productEndpoint = METAFIELDSOFPRODUCTRESTENDPOINT.replace("#{id}", p.getId().toString());
 
-        //HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = httpBuilder.uri(URI.create(productEndpoint))
-                .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
-                .build();
+        // HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = httpBuilder.uri(URI.create(productEndpoint)).setHeader("Content-Type", "application/json")
+                .setHeader("X-Shopify-Access-Token", apiKey).GET().build();
 
-        HttpResponse<String> response = httpClient.send(request, bodyHandler);
+        HttpResponse<String> response;
+        List<Metafield> metafieldsList = new ArrayList();
+        try {
+            response = httpClient.send(request, bodyHandler);
+            MetafieldsResponse responsePojo = mapper.readValue(response.body(), MetafieldsResponse.class);
+            metafieldsList = responsePojo.getMetafields();
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
 
-        //ObjectMapper mapper = new ObjectMapper();
-        MetafieldsResponse responsePojo = mapper.readValue(response.body(), MetafieldsResponse.class);
-
-        List<Metafield> metafieldsList = responsePojo.getMetafields();
+        // ObjectMapper mapper = new ObjectMapper();
 
         return metafieldsList.stream().collect(Collectors.toMap(Metafield::getKey, x -> x.getValue()));
     }
 
-    private List<Integer> stringToIntList(String stringToParse) {
+    public List<Integer> stringToIntList(String stringToParse) {
 
         String formattedString = stringToParse.substring(1, stringToParse.length() - 1);
 
@@ -242,7 +242,7 @@ public class DiscountManager {
 
         List<Product> res = new ArrayList<>();
 
-        //HttpClient client = HttpClient.newHttpClient();
+        // HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = httpBuilder.uri(URI.create(PRODUCTSRESTENDPOINT))
                 .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).GET()
                 .build();
@@ -250,7 +250,7 @@ public class DiscountManager {
         try {
             HttpResponse<String> response = httpClient.send(request, bodyHandler);
 
-            //ObjectMapper mapper = new ObjectMapper();
+            // ObjectMapper mapper = new ObjectMapper();
             ProductsResponse responsePojo = mapper.readValue(response.body(), ProductsResponse.class);
 
             res = responsePojo.getProducts();
@@ -268,7 +268,7 @@ public class DiscountManager {
 
         Double realPrice = checkRealPrice(product);
 
-        List <String> tags = new ArrayList <> ();
+        List<String> tags = new ArrayList<>();
         tags.addAll(Arrays.asList(product.getTags().split(", ")));
 
         Product updatedProduct = product;
@@ -279,40 +279,42 @@ public class DiscountManager {
             if (tags.contains(MANAGEDTAG)) {
                 tags.remove(MANAGEDTAG);
                 String tagResult = "";
-                for (String t:tags) {
-                    tagResult += t+", ";
+                for (String t : tags) {
+                    tagResult += t + ", ";
                 }
                 updatedProduct.setTags(tagResult);
             }
 
-        } else { // Hay que actualizarle el precio basandolo en el precio real, y si no esta el tag, añadirlo
+        } else { // Hay que actualizarle el precio basandolo en el precio real, y si no esta el
+                 // tag, añadirlo
 
-            String newPrice = String.format("%.2f", realPrice * (1 - ((double) discount.getPercentageDiscount() / 100)));
+            String newPrice = String.format("%.2f",
+                    realPrice * (1 - ((double) discount.getPercentageDiscount() / 100)));
             updatedProduct.getVariants().get(0).setPrice(newPrice.toString());
             updatedProduct.getVariants().get(0).setCompareAtPrice(realPrice.toString());
 
             if (!tags.contains(MANAGEDTAG)) {
                 tags.add(MANAGEDTAG);
                 String tagResult = "";
-                for (String t:tags) {
-                    tagResult += t+", ";
+                for (String t : tags) {
+                    tagResult += t + ", ";
                 }
                 updatedProduct.setTags(tagResult);
             }
         }
 
-        //ObjectMapper mapper = new ObjectMapper();
+        // ObjectMapper mapper = new ObjectMapper();
 
         String endpoint = PRODUCTBYIDENDPOINT.replace("#{id}", updatedProduct.getId().toString());
 
-        //HttpClient client = HttpClient.newHttpClient();
+        // HttpClient client = HttpClient.newHttpClient();
 
         try {
-            String body = ("{\"product\":"+mapper.writeValueAsString(updatedProduct)+"}").replace("\"null\"", "null");
+            String body = ("{\"product\":" + mapper.writeValueAsString(updatedProduct) + "}").replace("\"null\"",
+                    "null");
 
-            HttpRequest request = httpBuilder.uri(URI.create(endpoint))
-            .setHeader("Content-Type", "application/json").setHeader("X-Shopify-Access-Token", apiKey).PUT(BodyPublishers.ofString(body))
-            .build();
+            HttpRequest request = httpBuilder.uri(URI.create(endpoint)).setHeader("Content-Type", "application/json")
+                    .setHeader("X-Shopify-Access-Token", apiKey).PUT(BodyPublishers.ofString(body)).build();
             httpClient.send(request, bodyHandler);
 
         } catch (IOException | InterruptedException e) {
@@ -320,5 +322,8 @@ public class DiscountManager {
         }
 
     }
-    
+
+    public DiscountManager() {
+    }
+
 }

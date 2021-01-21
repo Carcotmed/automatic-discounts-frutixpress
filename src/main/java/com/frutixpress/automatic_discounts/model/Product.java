@@ -85,6 +85,19 @@ public class Product {
         return "Product [id=" + id + ", title=" + title + ", variants="+variants+"]";
     }
 
+    public Product() {
+    }
+
+    public Product(Long id, String title, String status, String tags, List<Variant> variants) {
+        this.id = id;
+        this.title = title;
+        this.status = status;
+        this.tags = tags;
+        this.variants = variants;
+    }
+
+    
+
     
 
 }

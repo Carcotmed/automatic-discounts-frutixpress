@@ -70,6 +70,16 @@ public class Variant {
         return "Variant [compareAtPrice=" + compareAtPrice + ", price=" + price + "]";
     }
 
+    public Variant() {
+    }
+
+    public Variant(Long id, Long productId, String price, String compareAtPrice) {
+        this.id = id;
+        this.productId = productId;
+        this.price = price;
+        this.compareAtPrice = compareAtPrice;
+    }
+
     
 
 }
